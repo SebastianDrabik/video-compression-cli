@@ -1,5 +1,11 @@
 # Simple Compressor (scomp)
+
 Simple CLI tool that compresses videos to a **target file size** using **ffmpeg** under the hood.
+
+![GitHub](https://img.shields.io/github/license/SebastianDrabik/video-compression-cli)
+![Release](https://github.com/SebastianDrabik/video-compression-cli/actions/workflows/release.yml/badge.svg)
+![GitHub release](https://img.shields.io/github/v/release/SebastianDrabik/video-compression-cli)
+![Python](https://img.shields.io/badge/Python-3.14+%2B-%233776AB?logo=python&logoColor=white)
 
 ## Installation
 
@@ -58,7 +64,7 @@ scomp -i input.mp4 -s 25
 
 ### Examples
 
-Compress a video down to 10MB, using custom output path
+Compress a video down to 10MB, using custom output path (ready to upload to discord)
 
 ```bash
 scomp -i clip.mp4 -s 8 -o clip_compressed.mp4

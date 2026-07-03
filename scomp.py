@@ -2,16 +2,27 @@ import argparse
 import subprocess
 import os
 import sys
+import re
+import time
 
-__version__ = '0.2'
+__version__ = '0.2.1'
+
 
 def get_video_duration(input_file):
     cmd = [
         "ffprobe", "-v", "error", "-show_entries",
-        "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_file
+        "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        input_file
     ]
     try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
         return float(result.stdout.strip())
     except subprocess.CalledProcessError:
         print(f"Error: Can't read {input_file}. Is ffmpeg/ffprobe installed?")
@@ -20,6 +31,26 @@ def get_video_duration(input_file):
 
 def get_file_size_mb(path):
     return os.path.getsize(path) / (1024 * 1024)
+
+
+def parse_time_to_seconds(time_str):
+    h, m, s = time_str.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def format_eta(seconds):
+    if seconds <= 0:
+        return "--:--"
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def render_bar(progress, width=30):
+    filled = int(progress * width)
+    return "█" * filled + "░" * (width - filled)
 
 
 def compress_video(input_file, output_file, target_size_mb):
@@ -34,52 +65,98 @@ def compress_video(input_file, output_file, target_size_mb):
         sys.exit(1)
 
     print(f"[/] Duration: {duration:.2f} s")
-    print(f"[/] Output size: {target_size_mb} MB")
-    print(f"[/] Calculated video bitrate: {video_bitrate_kbps:.2f} kbps")
+    print(f"[/] Target size: {target_size_mb} MB")
+    print(f"[/] Video bitrate: {video_bitrate_kbps:.2f} kbps")
+
+    print("\n[/] Starting 2-pass encoding...\n")
 
     null_out = os.devnull
 
-    print("\n[/] Analysing...")
+    # PASS 1
+    print("[/] Pass 1: analysing...")
     pass1_cmd = [
         "ffmpeg", "-y", "-i", input_file, "-c:v", "libx264",
-        "-b:v", f"{video_bitrate_kbps}k", "-pass", "1", "-an", "-f", "mp4", null_out
+        "-b:v", f"{video_bitrate_kbps}k", "-pass", "1",
+        "-an", "-f", "mp4", null_out
     ]
     subprocess.run(pass1_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    print("[/] Compression... (might take a while)")
+    # PASS 2 (with progress)
+    print("[/] Pass 2: encoding...\n")
+
     pass2_cmd = [
         "ffmpeg", "-y", "-i", input_file, "-c:v", "libx264",
-        "-b:v", f"{video_bitrate_kbps}k", "-pass", "2", "-c:a", "aac",
-        "-b:a", f"{audio_bitrate_kbps}k", output_file
+        "-b:v", f"{video_bitrate_kbps}k", "-pass", "2",
+        "-c:a", "aac", "-b:a", f"{audio_bitrate_kbps}k",
+        output_file
     ]
-    subprocess.run(pass2_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    if os.path.exists("ffmpeg2pass-0.log"):
-        os.remove("ffmpeg2pass-0.log")
-    if os.path.exists("ffmpeg2pass-0.log.mbtree"):
-        os.remove("ffmpeg2pass-0.log.mbtree")
+    process = subprocess.Popen(
+        pass2_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+
+    current_time = 0
+    start_time = time.time()
+
+    for line in process.stdout:
+        line = line.strip()
+
+        match = re.search(r"time=(\d+:\d+:\d+\.\d+)", line)
+        if match:
+            current_time = parse_time_to_seconds(match.group(1))
+
+            progress = min(current_time / duration, 1.0)
+
+            elapsed = time.time() - start_time
+            eta = (elapsed / progress - elapsed) if progress > 0 else 0
+
+            bar = render_bar(progress)
+
+            print(
+                f"\r[/] [{bar}] {progress * 100:6.2f}% | ETA {format_eta(eta)}",
+                end=""
+            )
+
+    print(
+        f"\r[/] [{render_bar(1)}] {100:6.2f}% | ETA {format_eta(0)}",
+        end=""
+    )
+
+    process.wait()
+    print("\n")
+
+    for f in ["ffmpeg2pass-0.log", "ffmpeg2pass-0.log.mbtree"]:
+        if os.path.exists(f):
+            os.remove(f)
 
     output_size = os.path.getsize(output_file)
 
-    print(f"\n[+] Success: saved output file in: {output_file}({(output_size / (1024 * 1024)):.2f}MB)")
+    print(
+        f"[+] Success: {output_file} "
+        f"({output_size / (1024 * 1024):.2f} MB)"
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Simple CLI tool for video compression using ffmpeg.",
-        epilog=f'-- v{__version__}'
+        epilog=f"-- v{__version__}"
     )
-    parser.add_argument(
-        '-v', '--version',
-        action='version',
-        version=f'%(prog)s {__version__}'
-    )
-    parser.add_argument("-i", "--input", required=True, help="input file path")
-    parser.add_argument("-o", "--output", required=False, help="output file path, (./output) by default")
-    parser.add_argument("-s", "--size", required=True, type=float, help="output size in MB")
 
-    # TODO
-    # parser.add_argument("-r", "--resolution", required=False, help="output file resolution")
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+
+    parser.add_argument("-i", "--input", required=True)
+    parser.add_argument("-o", "--output", required=False)
+    parser.add_argument("-s", "--size", required=True, type=float)
+    parser.add_argument("-r", "--adjust-resolution", required=False)
 
     args = parser.parse_args()
 
@@ -95,13 +172,13 @@ def main():
     if args.size >= input_size_mb:
         print(
             f"Error: Target size ({args.size:.2f} MB) must be smaller than "
-            f"the input file's current size ({input_size_mb:.2f} MB)."
+            f"input file ({input_size_mb:.2f} MB)."
         )
         sys.exit(1)
 
     if not args.output:
-        _, extension = os.path.splitext(args.input)
-        args.output = f"./output{extension}"
+        _, ext = os.path.splitext(args.input)
+        args.output = f"./output{ext}"
 
     compress_video(args.input, args.output, args.size)
 
