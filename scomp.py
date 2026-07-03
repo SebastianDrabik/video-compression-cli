@@ -5,16 +5,16 @@ import sys
 import re
 import time
 
-__version__ = '0.2.1'
-
+__version__ = '0.2.2'
 
 def get_video_duration(input_file):
     cmd = [
-        "ffprobe", "-v", "error", "-show_entries",
-        "format=duration",
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
         input_file
     ]
+
     try:
         result = subprocess.run(
             cmd,
@@ -53,7 +53,68 @@ def render_bar(progress, width=30):
     return "█" * filled + "░" * (width - filled)
 
 
-def compress_video(input_file, output_file, target_size_mb):
+MIN_BITRATES = {
+    "3840x2160": 12000,
+    "2560x1440": 7000,
+    "1920x1080": 3500,
+    "1280x720": 1800,
+    "854x480": 900,
+    "640x360": 500,
+}
+
+RES_ORDER = [
+    (3840, 2160),
+    (2560, 1440),
+    (1920, 1080),
+    (1280, 720),
+    (854, 480),
+    (640, 360),
+]
+
+
+def pick_resolution_for_bitrate(video_bitrate_kbps):
+    for w, h in RES_ORDER:
+        key = f"{w}x{h}"
+        if video_bitrate_kbps >= MIN_BITRATES[key]:
+            return w, h
+    return 640, 360
+
+
+def get_video_fps(input_file):
+    cmd = [
+        "ffprobe", "-v", "0",
+        "-of", "csv=p=0",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate",
+        input_file
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True
+    )
+
+    rate = result.stdout.strip()
+
+    try:
+        num, den = rate.split("/")
+        return float(num) / float(den)
+    except:
+        return 30.0
+
+
+def pick_fps(video_bitrate_kbps, original_fps):
+    if video_bitrate_kbps < 500 and original_fps > 30:
+        return 30
+    if video_bitrate_kbps < 300 and original_fps > 24:
+        return 24
+    return original_fps
+
+
+def compress_video(input_file, output_file, target_size_mb, adjust_resolution=False):
     duration = get_video_duration(input_file)
 
     total_bitrate_kbps = (target_size_mb * 8192) / duration
@@ -68,26 +129,61 @@ def compress_video(input_file, output_file, target_size_mb):
     print(f"[/] Target size: {target_size_mb} MB")
     print(f"[/] Video bitrate: {video_bitrate_kbps:.2f} kbps")
 
+    if video_bitrate_kbps < 300:
+        print("[!] WARNING: Extremely low bitrate. Expect heavy quality loss.")
+    if video_bitrate_kbps < 150:
+        print("[!!!] CRITICAL: Output will be barely watchable.")
+
+    fps = get_video_fps(input_file)
+    original_fps = fps
+
+    scale_filter = None
+
+    if adjust_resolution:
+        w, h = pick_resolution_for_bitrate(video_bitrate_kbps)
+        print(f"[/] Auto resolution: {w}x{h}")
+        scale_filter = f"scale={w}:{h}"
+
+    fps = pick_fps(video_bitrate_kbps, original_fps)
+
+    if fps != original_fps:
+        print(f"[/] FPS reduced: {original_fps:.2f} → {fps:.2f}")
+
     print("\n[/] Starting 2-pass encoding...\n")
 
     null_out = os.devnull
 
-    # PASS 1
     print("[/] Pass 1: analysing...")
     pass1_cmd = [
-        "ffmpeg", "-y", "-i", input_file, "-c:v", "libx264",
-        "-b:v", f"{video_bitrate_kbps}k", "-pass", "1",
-        "-an", "-f", "mp4", null_out
+        "ffmpeg", "-y", "-i", input_file,
+        "-c:v", "libx264",
+        "-b:v", f"{video_bitrate_kbps}k",
+        "-pass", "1",
+        "-an",
+        "-f", "mp4",
+        null_out
     ]
+
     subprocess.run(pass1_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # PASS 2 (with progress)
     print("[/] Pass 2: encoding...\n")
 
     pass2_cmd = [
-        "ffmpeg", "-y", "-i", input_file, "-c:v", "libx264",
-        "-b:v", f"{video_bitrate_kbps}k", "-pass", "2",
-        "-c:a", "aac", "-b:a", f"{audio_bitrate_kbps}k",
+        "ffmpeg", "-y", "-i", input_file,
+    ]
+
+    if scale_filter:
+        pass2_cmd += ["-vf", scale_filter]
+
+    if fps != original_fps:
+        pass2_cmd += ["-r", str(int(fps))]
+
+    pass2_cmd += [
+        "-c:v", "libx264",
+        "-b:v", f"{video_bitrate_kbps}k",
+        "-pass", "2",
+        "-c:a", "aac",
+        "-b:a", f"{audio_bitrate_kbps}k",
         output_file
     ]
 
@@ -147,16 +243,15 @@ def main():
         epilog=f"-- v{__version__}"
     )
 
-    parser.add_argument(
-        "-v", "--version",
-        action="version",
-        version=f"%(prog)s {__version__}"
-    )
-
     parser.add_argument("-i", "--input", required=True)
     parser.add_argument("-o", "--output", required=False)
     parser.add_argument("-s", "--size", required=True, type=float)
-    parser.add_argument("-r", "--adjust-resolution", required=False)
+
+    parser.add_argument(
+        "--adjust-resolution",
+        action="store_true",
+        help="Automatically reduce resolution based on target bitrate"
+    )
 
     args = parser.parse_args()
 
@@ -180,7 +275,12 @@ def main():
         _, ext = os.path.splitext(args.input)
         args.output = f"./output{ext}"
 
-    compress_video(args.input, args.output, args.size)
+    compress_video(
+        args.input,
+        args.output,
+        args.size,
+        adjust_resolution=args.adjust_resolution
+    )
 
 
 if __name__ == "__main__":
