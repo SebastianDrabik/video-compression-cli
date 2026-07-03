@@ -9,7 +9,6 @@ info()  { printf '\033[1;34m[*]\033[0m %s\n' "$1"; }
 ok()    { printf '\033[1;32m[+]\033[0m %s\n' "$1"; }
 error() { printf '\033[1;31m[!]\033[0m %s\n' "$1" >&2; }
 
-
 OS="$(uname -s)"
 case "$OS" in
     Linux)  PLATFORM="linux" ;;
@@ -29,11 +28,6 @@ case "$ARCH" in
         exit 1
         ;;
 esac
-
-if [ "$PLATFORM" = "linux" ] && [ "$ARCH" = "arm64" ]; then
-    error "No Linux arm64 build is currently published for $BIN_NAME."
-    exit 1
-fi
 
 ASSET_NAME="${BIN_NAME}-${PLATFORM}-${ARCH}"
 
@@ -106,7 +100,6 @@ if command -v shasum >/dev/null 2>&1 || command -v sha256sum >/dev/null 2>&1; th
     fi
 fi
 
-# --- Install ---
 if [ -w "$INSTALL_DIR" ]; then
     mv "$TMP_BIN" "${INSTALL_DIR}/${BIN_NAME}"
 else

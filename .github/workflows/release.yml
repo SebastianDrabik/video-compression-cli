@@ -16,8 +16,10 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: scomp-linux-x86_64
-          - os: macos-13
-            asset_name: scomp-macos-x86_64
+          - os: ubuntu-24.04-arm
+            asset_name: scomp-linux-arm64
+#          - os: macos-13
+#            asset_name: scomp-macos-x86_64
           - os: macos-14
             asset_name: scomp-macos-arm64
 

@@ -3,7 +3,7 @@ import subprocess
 import os
 import sys
 
-__version__ = '0.1'
+__version__ = '0.2'
 
 def get_video_duration(input_file):
     cmd = [
