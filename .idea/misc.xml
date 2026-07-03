@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="sdkName" value="uv (video-compress)" />
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="uv (video-compress)" project-jdk-type="Python SDK" />
+</project>
