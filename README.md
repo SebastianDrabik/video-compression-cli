@@ -5,7 +5,7 @@ Simple CLI tool that compresses videos to a **target file size** using **ffmpeg*
 ![GitHub](https://img.shields.io/github/license/SebastianDrabik/video-compression-cli)
 ![Release](https://github.com/SebastianDrabik/video-compression-cli/actions/workflows/release.yml/badge.svg)
 ![GitHub release](https://img.shields.io/github/v/release/SebastianDrabik/video-compression-cli)
-![Python](https://img.shields.io/badge/Python-3.14+%2B-%233776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14%2B-%233776AB?logo=python&logoColor=white)
 
 ## Installation
 
@@ -54,13 +54,14 @@ scomp -i input.mp4 -s 25
 
 ### Options
 
-| Flag | Description |
-|------|-------------|
-| `-i`, `--input` | Path to the input video file (required) |
-| `-s`, `--size` | Target output size in MB (required) |
-| `-o`, `--output` | Path to the output file (default: `./output<ext>`) |
-| `-v`, `--version` | Print the version and exit |
-| `-h`, `--help` | Show help and exit |
+| Flag                     | Description                                             |
+|--------------------------|---------------------------------------------------------|
+| `-i`, `--input`          | Path to the input video file (required)                 |
+| `-s`, `--size`           | Target output size in MB (required)                     |
+| `-o`, `--output`         | Path to the output file (default: `./output<ext>`)      |
+| `-v`, `--version`        | Print the version and exit                              |
+| `-h`, `--help`           | Show help and exit                                      |
+ | `--adjust-resolution `   | Automatically reduce resolution based on target bitrate | 
 
 ### Examples
 
